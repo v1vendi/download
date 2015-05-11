@@ -1,137 +1,125 @@
-//download.js v4.0, by dandavis; 2008-2015. [CCBY2] see http://danml.com/download.html for tests/usage
-// v1 landed a FF+Chrome compat way of downloading strings to local un-named files, upgraded to use a hidden frame and optional mime
-// v2 added named files via a[download], msSaveBlob, IE (10+) support, and window.URL support for larger+faster saves than dataURLs
-// v3 added dataURL and Blob Input, bind-toggle arity, and legacy dataURL fallback was improved with force-download mime and base64 support. 3.1 improved safari handling.
-// v4 adds AMD/UMD, commonJS, and plain browser support
-// https://github.com/rndme/download
+//download.js v4.0, by dandavis; 2008-2015. [CCBY2] fork by v1vendi
+// https://github.com/v1vendi/download
 
-(function (root, factory) {
-	if (typeof define === 'function' && define.amd) {
-		// AMD. Register as an anonymous module.
-		define([], factory);
-	} else if (typeof exports === 'object') {
-		// Node. Does not work with strict CommonJS, but
-		// only CommonJS-like environments that support module.exports,
-		// like Node.
-		module.exports = factory();
-	} else {
-		// Browser globals (root is window)
-		root.download = factory();
-  }
-}(this, function () {
+(function (window, factory) {
+    if (typeof define === 'function' && define.amd) {
+        define([], factory);
 
-	return function download(data, strFileName, strMimeType) {
+    } else if (typeof exports === 'object') {
+        module.exports = factory();
 
-		var self = window, // this script is only for browsers anyway...
-			u = "application/octet-stream", // this default mime also triggers iframe downloads
-			m = strMimeType || u,
-			x = data,
-			D = document,
-			a = D.createElement("a"),
-			z = function(a){return String(a);},
-			B = (self.Blob || self.MozBlob || self.WebKitBlob || z);
-			B=B.call ? B.bind(self) : Blob ;
-			var fn = strFileName || "download",
-			blob,
-			fr;
+    } else {
+        // Browser globals (root is window)
+        window.download = factory();
+    }
+}(window, function () {
 
+    return function download(data, fileName, mimeType) {
 
-		if(String(this)==="true"){ //reverse arguments, allowing download.bind(true, "text/xml", "export.xml") to act as a callback
-			x=[x, m];
-			m=x[0];
-			x=x[1];
-		}
+        var toString = function (a) { return String(a); },
+			Blob = (window.Blob || window.MozBlob || window.WebKitBlob || toString);
+        Blob = Blob.call ? Blob.bind(window) : Blob;
 
+        fileName = fileName || "download";
 
+        mimeType = mimeType || "application/octet-stream"; // this default mime also triggers iframe downloads
 
+        if (String(this) === "true") { //reverse arguments, allowing download.bind(true, "text/xml", "export.xml") to act as a callback
+            data = [data, mimeType];
+            mimeType = data[0];
+            data = data[1];
+        }
 
-		//go ahead and download dataURLs right away
-		if(String(x).match(/^data\:[\w+\-]+\/[\w+\-]+[,;]/)){
-			return navigator.msSaveBlob ?  // IE10 can't do a[download], only Blobs:
-				navigator.msSaveBlob(d2b(x), fn) :
-				saver(x) ; // everyone else can save dataURLs un-processed
-		}//end if dataURL passed?
+        //download dataURLs right away
+        if (String(data).match(/^data\:[\w+\-]+\/[\w+\-]+[,;]/)) {
+            return navigator.msSaveBlob ?  // IE10 can't do a[download], only Blobs:
+				navigator.msSaveBlob(dataToBlob(data), fileName) :
+				saver(data); // everyone else can save dataURLs un-processed
+        }
 
-		blob = x instanceof B ?
-			x :
-			new B([x], {type: m}) ;
+        var blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
 
+        function dataToBlob(u) {
+            var p = u.split(/[:;,]/),
+			t = p[1],
+			dec = p[2] == "base64" ? atob : decodeURIComponent,
+			bin = dec(p.pop()),
+			i = 0,
+			uia = new Uint8Array(bin.length);
 
-		function d2b(u) {
-			var p= u.split(/[:;,]/),
-			t= p[1],
-			dec= p[2] == "base64" ? atob : decodeURIComponent,
-			bin= dec(p.pop()),
-			mx= bin.length,
-			i= 0,
-			uia= new Uint8Array(mx);
+            for (i; i < bin.length; ++i) {
+                uia[i] = bin.charCodeAt(i);
+            }
 
-			for(i;i<mx;++i) uia[i]= bin.charCodeAt(i);
+            return new Blob([uia], { type: t });
+        }
 
-			return new B([uia], {type: t});
-		 }
+        function saver(url, winMode) {
 
-		function saver(url, winMode){
+            var a = document.createElement("a");
 
-			if ('download' in a) { //html5 A[download]
-				a.href = url;
-				a.setAttribute("download", fn);
-				a.innerHTML = "downloading...";
-				D.body.appendChild(a);
-				setTimeout(function() {
-					a.click();
-					D.body.removeChild(a);
-					if(winMode===true){setTimeout(function(){ self.URL.revokeObjectURL(a.href);}, 250 );}
-				}, 66);
-				return true;
-			}
+            if ('download' in a) { //html5 A[download]
+                a.href = url;
+                a.setAttribute("download", fileName);
+                setTimeout(function () {
+                    a.click();
+                    if (winMode === true) {
+                        setTimeout(function () {
+                            window.URL.revokeObjectURL(a.href);
+                        });
+                    }
+                });
+                return true;
+            }
 
-			if(typeof safari !=="undefined" ){ // handle non-a[download] safari as best we can:
-				url="data:"+url.replace(/^data:([\w\/\-\+]+)/, u);
-				if(!window.open(url)){ // popup blocked, offer direct download:
-					if(confirm("Displaying New Document\n\nUse Save As... to download, then click back to return to this page.")){ location.href=url; }
-				}
-				return true;
-			}
+            if (typeof safari !== "undefined") { // handle non-a[download] safari as best we can:
+                url = "data:" + url.replace(/^data:([\w\/\-\+]+)/, u);
+                if (!window.open(url)) { // popup blocked, offer direct download:
+                    if (confirm("Displaying New Document\n\nUse Save As... to download, then click back to return to this page.")) { location.href = url; }
+                }
+                return true;
+            }
 
-			//do iframe dataURL download (old ch+FF):
-			var f = D.createElement("iframe");
-			D.body.appendChild(f);
+            //do iframe dataURL download (old ch+FF):
+            var frame = document.createElement("iframe");
+            document.body.appendChild(frame);
 
-			if(!winMode){ // force a mime that will download:
-				url="data:"+url.replace(/^data:([\w\/\-\+]+)/, u);
-			}
-			f.src=url;
-			setTimeout(function(){ D.body.removeChild(f); }, 333);
+            if (!winMode) { // force a mime that will download:
+                url = "data:" + url.replace(/^data:([\w\/\-\+]+)/, u);
+            }
+            frame.src = url;
+            setTimeout(function () {
+                document.body.removeChild(frame);
+            });
 
-		}//end saver
+            return true;
+        }
 
+        if (navigator.msSaveBlob) { // IE10+ : (has Blob, but not a[download] or URL)
+            return navigator.msSaveBlob(blob, fileName);
+        }
 
+        if (window.URL) { // simple fast and modern way using Blob and URL:
+            saver(window.URL.createObjectURL(blob), true);
 
+        } else {
+            // handle non-Blob()+non-URL browsers:
+            if (typeof blob === "string" || blob.constructor === toString) {
+                try {
+                    return saver("data:" + mimeType + ";base64," + window.btoa(blob));
+                } catch (y) {
+                    return saver("data:" + mimeType + "," + encodeURIComponent(blob));
+                }
+            }
 
-		if (navigator.msSaveBlob) { // IE10+ : (has Blob, but not a[download] or URL)
-			return navigator.msSaveBlob(blob, fn);
-		}
+            // Blob but not URL:
+            var fileReader = new FileReader();
+            fileReader.onload = function () {
+                saver(this.result);
+            };
+            fileReader.readAsDataURL(blob);
+        }
 
-		if(self.URL){ // simple fast and modern way using Blob and URL:
-			saver(self.URL.createObjectURL(blob), true);
-		}else{
-			// handle non-Blob()+non-URL browsers:
-			if(typeof blob === "string" || blob.constructor===z ){
-				try{
-					return saver( "data:" +  m   + ";base64,"  +  self.btoa(blob)  );
-				}catch(y){
-					return saver( "data:" +  m   + "," + encodeURIComponent(blob)  );
-				}
-			}
-
-			// Blob but not URL:
-			fr=new FileReader();
-			fr.onload=function(e){
-				saver(this.result);
-			};
-			fr.readAsDataURL(blob);
-		}
-		return true;
-	}; /* end download() */
+        return true;
+    };
 }));
